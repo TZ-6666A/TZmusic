@@ -1,8 +1,12 @@
+//项目的生命源泉
 import { AbilityConstant, ConfigurationConstant, UIAbility, Want } from '@kit.AbilityKit';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { window } from '@kit.ArkUI';
 import { playerManager } from '../utils/AvPlayerManager';
 import { sessionManager } from '../utils/AvSessionManager';
+import { FavoritesStore } from '../models/favoritesStore';
+import { ReviewStore } from '../models/reviewStore';
+import { AppStorageV2 } from '@kit.ArkUI';
 
 const DOMAIN = 0x0000;
 
@@ -20,10 +24,15 @@ export default class EntryAbility extends UIAbility {
     hilog.info(DOMAIN, 'testTag', '%{public}s', 'Ability onDestroy');
   }
 
-  onWindowStageCreate(windowStage: window.WindowStage): void {
+  async onWindowStageCreate(windowStage: window.WindowStage): Promise<void> {
     // Main window is created, set main page for this ability
     //准备播放器
-    playerManager.init()
+    await playerManager.init()
+    // 初始化收藏数据（从磁盘加载）
+    const favStore = AppStorageV2.connect(FavoritesStore, 'FAVORITES_KEY', () => new FavoritesStore())!
+    await favStore.init(this.context)
+    const reviewStore = AppStorageV2.connect(ReviewStore, 'REVIEW_KEY', () => new ReviewStore())!
+    await reviewStore.init(this.context)
     sessionManager.init(this.context)
     hilog.info(DOMAIN, 'testTag', '%{public}s', 'Ability onWindowStageCreate');
 
@@ -43,9 +52,7 @@ export default class EntryAbility extends UIAbility {
 
   onForeground(): void {
     // Ability has brought to foreground
-    //注销会话 和 释放播放器
-    sessionManager.destroy()
-    playerManager.release()
+    // 前台时保持播放器运行，不释放
     hilog.info(DOMAIN, 'testTag', '%{public}s', 'Ability onForeground');
   }
 

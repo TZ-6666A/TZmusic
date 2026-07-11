@@ -1,3 +1,4 @@
+//保证退出后台app不会被杀死＋状态栏显示及app控制
 import { avSession } from '@kit.AVSessionKit'
 import backgroundTaskManager from '@ohos.resourceschedule.backgroundTaskManager'
 import { wantAgent } from '@kit.AbilityKit';
@@ -19,7 +20,7 @@ class AvSessionManager {
     let wantAgentInfo: wantAgent.WantAgentInfo = {
       wants: [
         {
-          bundleName: "com.example.hm_music",
+          bundleName: "com.yuzi.myapplication",
           abilityName: "EntryAbility"
         }
       ],
@@ -32,11 +33,14 @@ class AvSessionManager {
   }
 
   //设置元数据
-  setAVMetadata (song: SongItemType) {
+  setAVMetadata (song?: SongItemType | null) {
+    if (!song) {
+      return
+    }
     this.session?.setAVMetadata({
       assetId: song.id,
       title: song.name,
-      mediaImage: song.img,
+      mediaImage: song.img as string,
       artist: song.author,
       duration: this.playState.duration
     })
@@ -59,6 +63,12 @@ class AvSessionManager {
   // 注册事件
   registerEvent () {
     this.session?.on('play', () => {
+      if (this.playState.playList.length === 0) {
+        return
+      }
+      if (this.playState.playIndex < 0 || this.playState.playIndex >= this.playState.playList.length) {
+        this.playState.playIndex = 0
+      }
       playerManager.singPlay(this.playState.playList[this.playState.playIndex])
     })
     this.session?.on('pause', () => {

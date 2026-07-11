@@ -1,11 +1,11 @@
-{
+﻿{
   "routerMap": [
     {
       "name": "Start",
       "pageSourceFile": "src/main/ets/pages/Start.ets",
       "buildFunction": "StartBuilder",
       "data": {
-        "description": "this is Start"
+        "description": "start page"
       }
     },
     {
@@ -13,7 +13,15 @@
       "pageSourceFile": "src/main/ets/pages/Layout.ets",
       "buildFunction": "LayoutBuilder",
       "data": {
-        "description": "this is Layout"
+        "description": "layout page"
+      }
+    },
+    {
+      "name": "Login",
+      "pageSourceFile": "src/main/ets/pages/Login.ets",
+      "buildFunction": "LoginBuilder",
+      "data": {
+        "description": "login page"
       }
     },
     {
@@ -21,7 +29,47 @@
       "pageSourceFile": "src/main/ets/pages/Play.ets",
       "buildFunction": "PlayBuilder",
       "data": {
-        "description": "this is Play"
+        "description": "play page"
+      }
+    },
+    {
+      "name": "PlayList",
+      "pageSourceFile": "src/main/ets/pages/PlayList.ets",
+      "buildFunction": "PlayListBuilder",
+      "data": {
+        "description": "playlist page"
+      }
+    },
+    {
+      "name": "Record",
+      "pageSourceFile": "src/main/ets/pages/Record.ets",
+      "buildFunction": "RecordBuilder",
+      "data": {
+        "description": "record page"
+      }
+    },
+    {
+      "name": "HistoryKGe",
+      "pageSourceFile": "src/main/ets/pages/HistoryKGe.ets",
+      "buildFunction": "HistoryKGeBuilder",
+      "data": {
+        "description": "history k song page"
+      }
+    },
+    {
+      "name": "AddReview",
+      "pageSourceFile": "src/main/ets/pages/AddReview.ets",
+      "buildFunction": "AddReviewBuilder",
+      "data": {
+        "description": "add song review page"
+      }
+    },
+    {
+      "name": "SingerDetail",
+      "pageSourceFile": "src/main/ets/pages/SingerDetail.ets",
+      "buildFunction": "SingerDetailBuilder",
+      "data": {
+        "description": "singer detail page"
       }
     }
   ]

@@ -10,7 +10,11 @@
     },
     {
       "name": "EntryAbility_label",
-      "value": "黑马云音乐"
+      "value": "TZ音乐"
+    },
+    {
+      "name": "microphone_permission_reason",
+      "value": "用于K歌录音功能，录制你的歌声"
     }
   ]
 }
