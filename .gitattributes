@@ -1,0 +1,4 @@
+# Keep Windows build wrappers in the repository, but exclude them from
+# repository language statistics.
+hvigorw.bat linguist-detectable=false
+ohpmw.bat linguist-detectable=false
