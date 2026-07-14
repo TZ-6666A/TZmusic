@@ -76,10 +76,10 @@ entry\build\default\outputs\default\entry-default-signed.hap
 
 
 ## 项目预览
-![输入图片说明](entry/src/main/resources/base/media/image.png)
-![输入图片说明](entry/src/main/resources/base/media/xiangmujietu1.png)
-![输入图片说明](entry/src/main/resources/base/media/xiangmujietu2.png)
-![输入图片说明](entry/src/main/resources/base/media/xiangmujietu3.png)
+![输入图片说明](image-1.png)
+![输入图片说明](image-2.png)
+![输入图片说明](image-3.png)
+![输入图片说明](image.png)
 
 ## 说明
 
