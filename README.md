@@ -58,7 +58,7 @@ TZmusic/
 ## 环境要求
 
 - DevEco Studio
-- HarmonyOS SDK：与项目配置中的 `API 26`（`compatibleSdkVersion: 26.0.0`）保持兼容
+- HarmonyOS SDK：与项目配置中的 `API 23`（`compatibleSdkVersion: 6.1.0(23)`）保持兼容
 - 真机调试建议使用 HarmonyOS 手机；K 歌录音功能需要授予麦克风权限
 
 ## 运行方式
