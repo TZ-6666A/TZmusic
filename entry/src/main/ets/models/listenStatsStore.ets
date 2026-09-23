@@ -42,11 +42,6 @@ export class ListenStatsStore {
     }
   }
 
-  static async getTotalMinutes(context: Context): Promise<number> {
-    const secs = await ListenStatsStore.getTotalSeconds(context)
-    return Math.floor(secs / 60)
-  }
-
   // 首次进入时把磁盘历史数据加载进全局状态；已加载则直接返回
   static async ensureLoaded(context: Context): Promise<number> {
     const state = ListenStatsStore.state()
@@ -77,13 +72,5 @@ export class ListenStatsStore {
     // 同步更新全局响应式状态，所有绑定页面自动刷新
     state.totalSeconds = next
     return next
-  }
-
-  // 兼容旧调用：按分钟累加
-  static async addMinutes(context: Context, minutes: number): Promise<number> {
-    if (minutes <= 0) {
-      return ListenStatsStore.state().totalSeconds
-    }
-    return ListenStatsStore.addSeconds(context, minutes * 60)
   }
 }

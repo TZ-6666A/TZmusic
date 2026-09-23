@@ -14,7 +14,6 @@ import { ListenLevelBuilder } from './ListenLevel';
 @Entry
 @ComponentV2
 struct Index {
-  //pathStack : NavPathStack = new NavPathStack();
   pathStack : NavPathStack = AppStorageV2.connect(NavPathStack,'navStack',()=>new NavPathStack())!
 
   // 显式路由表：所有 pushPathByName 的页面都在这里注册

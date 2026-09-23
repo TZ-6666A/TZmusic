@@ -22,7 +22,6 @@ struct Play {
   favStore: FavoritesStore = AppStorageV2.connect(FavoritesStore, 'FAVORITES_KEY', () => new FavoritesStore())!
   @Local rotateAngle: number = 0
   private rotateTimer: number = -1
-  //playState:SongItemType = this.songs[0]
 
 
   @Builder
@@ -35,13 +34,7 @@ struct Play {
       .type(ButtonType.Normal)
       .onClick(() => {
         playerManager.removeSong(index)
-        //回退到前一页
         this.pathStack.pop()
-        // if(this.pathStack.size() ==1)
-        // {
-        //   this.pathStack.pop()
-        // }
-
       })
 
   }
@@ -163,7 +156,6 @@ struct Play {
 
           // 内容
           Column() {
-            // //   播放界面
             Column() {
               // 图片
               Stack({ alignContent: Alignment.Top }) {
@@ -465,7 +457,6 @@ struct Play {
           .height(400)
         }
         .height(this.panelHeight)
-        // .height('100%')
         .animation({
           duration: 300
         })

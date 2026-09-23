@@ -37,10 +37,6 @@ struct Start {
 
   build() {
     NavDestination() {
-      // Button('点击跳转到 Layout ')
-      //   .onClick(() => {
-      //     this.pageStack.pushPathByName("Layout", null, false)
-      //   })
       Stack({ alignContent: Alignment.TopEnd }) {
         Image($r('app.media.guanggaoye'))
           .width('100%')
@@ -50,13 +46,10 @@ struct Start {
           .backgroundColor(Color.Grey)
           .margin(15)
           .onClick(() => {
-            //replacePathByName   不支持返回
             void this.goNext()
-            // this.pageStack.pushPathByName("Layout", null, false)  pushPathByname  支持返回
           })
       }
     }
-    // .title('广告页')
     .onReady((context: NavDestinationContext) => {
       this.pathStack = context.pathStack
     })
