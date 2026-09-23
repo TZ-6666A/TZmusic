@@ -91,6 +91,13 @@ entry\build\default\outputs\default\entry-default-unsigned.hap
 | `ohos.permission.KEEP_BACKGROUND_RUNNING` | 保持后台音频播放 |
 | `ohos.permission.MICROPHONE` | K 歌录音 |
 
+
+## 项目预览
+![输入图片说明](image-1.png)
+![输入图片说明](image-2.png)
+![输入图片说明](image-3.png)
+![输入图片说明](image.png)
+
 ## 说明
 
 本项目中的歌曲、图片等资源仅用于学习与演示，请勿用于商业用途。
