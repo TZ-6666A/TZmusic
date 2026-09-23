@@ -1,4 +1,5 @@
-﻿export interface ReviewItem {
+﻿//有关评论相关的数据
+export interface ReviewItem {
   name: string
   author: string
   comment: string

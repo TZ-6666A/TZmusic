@@ -71,6 +71,14 @@
       "data": {
         "description": "singer detail page"
       }
+    },
+    {
+      "name": "ListenLevel",
+      "pageSourceFile": "src/main/ets/pages/ListenLevel.ets",
+      "buildFunction": "ListenLevelBuilder",
+      "data": {
+        "description": "listen level page"
+      }
     }
   ]
 }

@@ -1,14 +1,14 @@
 # TZ Music
 
-一款基于 **HarmonyOS** 开发的本地音乐应用，使用 ArkTS 与 ArkUI 构建。项目围绕音乐浏览、播放控制、K 歌录音与个人数据管理等场景实现，适合作为 HarmonyOS 客户端开发学习与实践项目。
+一款基于 **HarmonyOS** 开发的本地音乐应用，使用 ArkTS 与 ArkUI 构建，覆盖音乐浏览、音频播放、后台媒体会话、PCM 录音试听与本地数据管理等客户端开发场景。
 
 ## 功能概览
 
 - 推荐大厅：展示推荐歌曲、歌手与音乐内容。
 - 音乐播放：支持本地 Rawfile 音频播放、播放列表管理、上一首/下一首、进度拖动，以及顺序、随机和单曲循环模式。
-- 后台播放：接入 AVSession，支持系统媒体控制、锁屏播放状态展示和后台音频任务。
-- 收藏与歌单：管理喜欢的歌曲与当前播放列表。
-- K 歌录音：申请麦克风权限后录制 PCM 音频，支持试听、重录、保存与历史记录查看。
+- 后台播放：接入 AVSession，支持系统媒体控制、播放状态同步与后台音频任务。
+- 收藏与播放列表：管理喜欢的歌曲与当前播放列表。
+- K 歌录音：申请麦克风权限后录制 PCM 音频，支持试听、重录、保存、历史记录查看与删除。
 - 歌曲评价：可添加、查看和删除歌曲评价。
 - 个人中心：展示累计听歌时长、历史 K 歌记录、当前播放信息与登录状态。
 
@@ -22,20 +22,36 @@
 | 本地数据 | Preferences、File I/O、Rawfile |
 | 工程构建 | DevEco Studio、Hvigor、OHPM |
 
+> `AppStorageV2` 用于跨页面共享播放状态；收藏、评论、听歌时长和 K 歌历史等数据使用 Preferences 持久化。
+
+## 项目预览
+
+将真机或模拟器截图放入 `docs/images/` 后，README 会通过相对路径展示图片；这些图片不会被打包到应用中。
+
+| 推荐与播放 | K 歌录音 |
+| --- | --- |
+| ![推荐与播放页面](docs/images/home-play.png) | ![K歌录音页面](docs/images/k-song.png) |
+
+| 历史 K 歌 | 个人中心 |
+| --- | --- |
+| ![历史K歌页面](docs/images/k-song-history.png) | ![个人中心页面](docs/images/profile.png) |
+
 ## 项目结构
 
 ```text
 TZmusic/
+├─ docs/
+│  └─ images/             # README 项目截图（不参与应用打包）
 ├─ entry/
 │  └─ src/main/
 │     ├─ ets/
-│     │  ├─ pages/       # 推荐、播放、K 歌、录音、个人中心等页面
-│     │  ├─ models/      # 播放、收藏、评价、听歌时长等状态与存储
-│     │  ├─ utils/       # AVPlayer 与 AVSession 管理
-│     │  └─ data/        # 推荐歌曲和歌评数据
+│     │  ├─ pages/        # 推荐、播放、K 歌、录音、个人中心等页面
+│     │  ├─ models/       # 播放、收藏、评价、听歌时长等状态与存储
+│     │  ├─ utils/        # AVPlayer 与 AVSession 管理
+│     │  └─ data/         # 推荐歌曲和歌评数据
 │     └─ resources/
-│        ├─ base/media/  # 图片与图标资源
-│        └─ rawfile/     # 本地音频资源
+│        ├─ base/media/   # 应用图片与图标资源
+│        └─ rawfile/      # 本地音频资源
 ├─ build-profile.json5
 └─ hvigorfile.ts
 ```
@@ -59,11 +75,13 @@ TZmusic/
 .\hvigorw.bat --mode module -p product=default assembleHap
 ```
 
-构建产物通常位于：
+未配置签名时，构建产物通常位于：
 
 ```text
-entry\build\default\outputs\default\entry-default-signed.hap
+entry\build\default\outputs\default\entry-default-unsigned.hap
 ```
+
+配置签名后可生成签名包。
 
 ## 权限说明
 

@@ -1,3 +1,4 @@
+//登录页面
 import { preferences } from '@kit.ArkData'
 
 const LOGIN_STORE = 'login_store'
@@ -21,6 +22,7 @@ struct Login {
     if (this.account === VALID_ACCOUNT && this.password === VALID_PASSWORD) {
       const prefs = await preferences.getPreferences(getContext(this), LOGIN_STORE)
       await prefs.put(KEY_LOGGED_IN, true)
+      //把刚刚修改的 Preferences 数据真正保存到手机本地(flush() = 把内存中的修改同步（刷新）到本地持久化存储。)
       await prefs.flush()
       this.pathStack.replacePathByName('Layout', null, false)
     } else {

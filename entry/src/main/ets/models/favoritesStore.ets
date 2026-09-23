@@ -39,17 +39,24 @@ export class FavoritesStore {
 
   // 切换收藏状态
   toggleLike(song: SongItemType): void {
-    if (!song.id) {
-      song.id = song.url as string
-    }
-    if (!song.id) return
-    const idx = this.likedIds.indexOf(song.id)
+    const songId: string = song.id || (song.url as string)
+    if (!songId) return
+    const idx = this.likedIds.indexOf(songId)
     if (idx >= 0) {
       this.likedIds.splice(idx, 1)
       this.likedSongs.splice(idx, 1)
     } else {
-      this.likedIds.push(song.id)
-      this.likedSongs.push(song)
+      const stored: SongItemType = {
+        img: song.img,
+        name: song.name,
+        author: song.author,
+        url: song.url,
+        id: songId,
+        lyrics: song.lyrics,
+        rawFile: song.rawFile
+      }
+      this.likedIds.push(songId)
+      this.likedSongs.push(stored)
     }
     void this.save()
   }

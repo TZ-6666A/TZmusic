@@ -10,3 +10,11 @@
 /.clang-tidy
 **/.test
 /.appanalyzer
+
+# 构建日志
+build_*.log
+
+# AI 工具本地配置
+/.agents
+/.claude
+/.codex

@@ -1,4 +1,5 @@
-﻿interface SingerDetailParams {
+﻿//歌手详情页
+interface SingerDetailParams {
   img?: string | Resource
   name?: string
   title?: string

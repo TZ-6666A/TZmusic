@@ -2,20 +2,23 @@
 // 跳转页面入口函数
 import { preferences } from '@kit.ArkData'
 
+//锁定登录这一行为（盒子）
 const LOGIN_STORE = 'login_store'
+//登录状态
 const KEY_LOGGED_IN = 'is_logged_in'
 
-@Builder
+@Builder//自定义构建函数装饰器
 export function StartBuilder() {
   Start()
 }
 
-@Component
+@ComponentV2
 struct Start {
   //控制跳转的对象
   pathStack: NavPathStack = new NavPathStack()
 
   async goNext(): Promise<void> {
+    //try/catch不是条件选择，而是在try走得通的前提下走try再走catch
     try {
       const prefs = await preferences.getPreferences(getContext(this), LOGIN_STORE)
       const loggedIn = await prefs.get(KEY_LOGGED_IN, false) as boolean

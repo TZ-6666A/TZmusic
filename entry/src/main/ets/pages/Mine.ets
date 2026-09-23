@@ -1,10 +1,12 @@
 ﻿import { preferences } from '@kit.ArkData'
 import { AppStorageV2 } from '@kit.ArkUI'
-import { ListenStatsStore } from '../models/listenStatsStore'
+import { ListenStatsStore, ListenStatsState, LISTEN_STATS_KEY } from '../models/listenStatsStore'
 import { playerManager } from '../utils/AvPlayerManager'
 import { GlobalMusic } from '../models/globalMusic'
 import { ReviewStore } from '../models/reviewStore'
 import { ReviewItem } from '../data/reviewData'
+import { KSongHistoryStore } from '../models/kSongHistoryStore'
+import { UserProfileStore, UserProfileState } from '../models/UserProfileStore'
 
 const LOGIN_STORE = 'login_store'
 const KEY_LOGGED_IN = 'is_logged_in'
@@ -12,16 +14,55 @@ const KEY_LOGGED_IN = 'is_logged_in'
 @ComponentV2
 export struct Mine {
   pathStack: NavPathStack = AppStorageV2.connect(NavPathStack, 'navStack', () => new NavPathStack())!
-  @Local listenMinutes: number = 0
+  @Local listenStats: ListenStatsState = AppStorageV2.connect(ListenStatsState, LISTEN_STATS_KEY, () => new ListenStatsState())!
+  @Local kgeCount: number = 0
   @Local playState: GlobalMusic = AppStorageV2.connect(GlobalMusic, 'SONG_KEY', () => new GlobalMusic())!
   @Local reviewStore: ReviewStore = AppStorageV2.connect(ReviewStore, 'REVIEW_KEY', () => new ReviewStore())!
+  @Local profile: UserProfileState = AppStorageV2.connect(UserProfileState, 'USER_PROFILE', () => new UserProfileState())!
 
   aboutToAppear(): void {
-    void this.loadListenMinutes()
+    void this.loadStats()
+    void this.loadProfile()
   }
 
-  async loadListenMinutes(): Promise<void> {
-    this.listenMinutes = await ListenStatsStore.getTotalMinutes(getContext(this))
+  async loadProfile(force: boolean = false): Promise<void> {
+    if (this.profile.loaded && !force) return
+    const p = await UserProfileStore.getProfile(getContext(this))
+    this.profile.nickname = p.nickname
+    this.profile.signature = p.signature
+    this.profile.avatarUri = p.avatarUri
+    this.profile.bgUri = p.bgUri
+    this.profile.loaded = true
+  }
+
+  async loadStats(): Promise<void> {
+    await ListenStatsStore.ensureLoaded(getContext(this))
+    const works = await KSongHistoryStore.getAll(getContext(this))
+    this.kgeCount = works.length
+  }
+
+  // 与听歌等级页绑定同一份全局数据，保证分钟数完全一致
+  @Computed
+  get listenMinutes(): number {
+    return this.listenStats.totalMinutes
+  }
+
+  // 等级随全局听歌分钟数自动计算
+  @Computed
+  get currentLevel(): number {
+    const minutes = this.listenMinutes
+    if (minutes < 1) return 0
+    if (minutes < 10) return 1
+    if (minutes < 30) return 2
+    if (minutes < 100) return 3
+    if (minutes < 1000) return 4
+    if (minutes < 5000) return 5
+    return 6
+  }
+
+  getLevelColor(): string {
+    const colors: string[] = ['#ccc', '#94a3b8', '#34d399', '#60a5fa', '#a78bfa', '#f472b6', '#fbbf24']
+    return colors[Math.min(6, Math.max(0, this.currentLevel))]
   }
 
   async logout(): Promise<void> {
@@ -32,255 +73,300 @@ export struct Mine {
     this.pathStack.replacePathByName('Login', null, false)
   }
 
+  // ================= 背景图 / 头像 =================
+
   @Builder
-  actionRow(title: string, desc: string, danger: boolean) {
-    Row() {
-      Text(title)
-        .fontSize(16)
-        .fontWeight(FontWeight.Medium)
-        .fontColor(danger ? '#ef4444' : '#222')
-        .layoutWeight(1)
-      Text(desc)
-        .fontSize(12)
-        .fontColor(danger ? '#ef4444' : '#999')
-      if (!danger) {
-        Image($r('app.media.ic_more'))
-          .width(18)
-          .height(18)
-          .fillColor('#bbb')
-      }
+  bgLayer() {
+    if (this.profile.bgUri) {
+      Image(this.profile.bgUri)
+        .width('100%')
+        .aspectRatio(16 / 9)
+        .objectFit(ImageFit.Cover)
+        .onClick(() => { this.pathStack.pushPathByName('ProfileEdit', null, false) })
+    } else {
+      Image($r('app.media.beijingtu'))
+        .width('100%')
+        .aspectRatio(16 / 9)
+        .objectFit(ImageFit.Cover)
+        .onClick(() => { this.pathStack.pushPathByName('ProfileEdit', null, false) })
     }
-    .width('100%')
-    .height(54)
-    .padding({ left: 16, right: 16 })
-    .backgroundColor(danger ? '#fff1f2' : '#f8f8f8')
-    .borderRadius(14)
-    .onClick(() => {
-      if (danger) {
-        void this.logout()
-      } else {
-        this.pathStack.pushPathByName('HistoryKGe', null, false)
-      }
-    })
   }
 
   @Builder
-  playerEntry() {
+  avatarCircle() {
+    if (this.profile.avatarUri) {
+      Image(this.profile.avatarUri)
+        .width(72).height(72)
+        .borderRadius(36)
+        .border({ width: 3, color: Color.White })
+        .shadow({ radius: 12, color: '#55000000', offsetY: 4 })
+        .objectFit(ImageFit.Cover)
+        .onClick(() => { this.pathStack.pushPathByName('ProfileEdit', null, false) })
+    } else {
+      Image($r('app.media.touxiang'))
+        .width(72).height(72)
+        .borderRadius(36)
+        .border({ width: 3, color: Color.White })
+        .shadow({ radius: 12, color: '#55000000', offsetY: 4 })
+        .objectFit(ImageFit.Cover)
+        .onClick(() => { this.pathStack.pushPathByName('ProfileEdit', null, false) })
+    }
+  }
+
+  // ================= 数据栏 =================
+
+  @Builder
+  statItem(value: string, label: string, onClick?: () => void) {
+    Column({ space: 4 }) {
+      Text(value)
+        .fontSize(22).fontWeight(FontWeight.Bold).fontColor('#222')
+      Text(label)
+        .fontSize(12).fontColor('#999')
+    }
+    .layoutWeight(1)
+    .justifyContent(FlexAlign.Center)
+    .onClick(() => { if (onClick) onClick() })
+  }
+
+  @Builder
+  statsCard() {
+    Row() {
+      this.statItem(this.listenMinutes.toString(), '听歌分钟', () => {
+        this.pathStack.pushPathByName('ListenLevel', null, false)
+      })
+      Column()
+        .width(0.5).height(36).backgroundColor('#eee')
+      this.statItem(this.kgeCount.toString(), 'K歌作品')
+      Column()
+        .width(0.5).height(36).backgroundColor('#eee')
+      this.statItem(this.reviewStore.reviews.length.toString(), '我的歌评')
+    }
+    .width('100%')
+    .padding({ top: 18, bottom: 18 })
+    .backgroundColor(Color.White)
+    .borderRadius(16)
+  }
+
+  // ================= 功能入口卡片 =================
+
+  @Builder
+  menuCard(icon: Resource, title: string, desc: string, bgColor: string, action: () => void) {
     Row({ space: 14 }) {
       Stack({ alignContent: Alignment.Center }) {
         Circle()
-          .width(48)
-          .height(48)
-          .fill('#ffe4ec')
-        Circle()
-          .width(34)
-          .height(34)
-          .fill('#ff5186')
-        Image($r('app.media.ic_play'))
-          .width(16)
-          .height(16)
+          .width(46).height(46)
+          .fill(bgColor)
+        Image(icon)
+          .width(22).height(22)
           .fillColor(Color.White)
       }
 
-      Column({ space: 5 }) {
-        Text(this.playState.name ? '正在播放' : '音乐播放器')
-          .fontSize(12)
-          .fontColor('#999')
-        Text(this.playState.name || '进入播放器')
-          .fontSize(16)
-          .fontWeight(FontWeight.Bold)
-          .fontColor('#222')
+      Column({ space: 4 }) {
+        Text(title)
+          .fontSize(16).fontWeight(FontWeight.Medium).fontColor('#222')
+        Text(desc)
+          .fontSize(12).fontColor('#999')
           .maxLines(1)
-          .textOverflow({ overflow: TextOverflow.Ellipsis })
-        Text(this.playState.author || '查看当前歌曲和播放列表')
-          .fontSize(12)
-          .fontColor('#999')
-          .maxLines(1)
-          .textOverflow({ overflow: TextOverflow.Ellipsis })
       }
       .layoutWeight(1)
       .alignItems(HorizontalAlign.Start)
 
       Image($r('app.media.ic_more'))
-        .width(18)
-        .height(18)
-        .fillColor('#bbb')
+        .width(16).height(16)
+        .fillColor('#ccc')
     }
     .width('100%')
-    .height(76)
-    .padding({ left: 16, right: 16 })
-    .backgroundColor('#f8f8f8')
-    .borderRadius(14)
-    .onClick(() => {
-      this.pathStack.pushPathByName('Play', null, false)
-    })
+    .padding({ left: 16, right: 16, top: 14, bottom: 14 })
+    .backgroundColor(Color.White)
+    .borderRadius(16)
+    .onClick(() => { action() })
   }
 
+  // ================= 歌评卡片 =================
+
   @Builder
-  addReviewRow() {
-    Row() {
-      Text('添加歌评')
-        .fontSize(16)
-        .fontWeight(FontWeight.Medium)
-        .fontColor('#222')
-        .layoutWeight(1)
-      Text('选择歌曲并发表评价')
-        .fontSize(12)
-        .fontColor('#999')
-      Image($r('app.media.ic_more'))
-        .width(18)
-        .height(18)
-        .fillColor('#bbb')
+  reviewCard(item: ReviewItem, index: number) {
+    Column() {
+      Row({ space: 12 }) {
+        Image(item.img)
+          .width(50).height(50).borderRadius(10)
+
+        Column({ space: 3 }) {
+          Text(item.name)
+            .fontSize(15).fontWeight(FontWeight.Medium).fontColor('#222')
+            .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis })
+          Text(item.author)
+            .fontSize(12).fontColor('#999')
+        }
+        .layoutWeight(1).alignItems(HorizontalAlign.Start)
+
+        Text('删除')
+          .fontSize(12).fontColor('#ef4444')
+          .padding({ left: 10, right: 10, top: 5, bottom: 5 })
+          .backgroundColor('#fff1f2')
+          .borderRadius(12)
+          .onClick(() => { this.reviewStore.deleteReview(index) })
+      }
+      .width('100%')
+
+      Text(item.comment)
+        .fontSize(13).fontColor('#666')
+        .lineHeight(20)
+        .margin({ top: 10 })
     }
     .width('100%')
-    .height(54)
-    .padding({ left: 16, right: 16 })
-    .backgroundColor('#f8f8f8')
-    .borderRadius(14)
-    .onClick(() => {
-      this.pathStack.pushPathByName('AddReview', null, false)
-    })
+    .padding(16)
+    .backgroundColor(Color.White)
+    .borderRadius(16)
   }
 
   build() {
     Scroll() {
       Column() {
-        Image($r('app.media.beijingtu'))
-          .width('100%')
-          .height(300)
-          .objectFit(ImageFit.Cover)
-          .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP])
+        // 背景图（16:9）
+        this.bgLayer()
 
-        Column() {
-          Image($r('app.media.touxiang'))
-            .width(80)
-            .height(80)
-            .border({ width: 3, color: Color.White })
-            .alignSelf(ItemAlign.End)
-            .margin({ right: 18, top: -65 })
-
-          Text('音乐调味人生')
-            .fontSize(13)
-            .fontColor('#ff292020')
-            .alignSelf(ItemAlign.End)
-            .margin({ right: 16, top: 3 })
-
-          Divider()
-            .strokeWidth(0.5)
-            .color('#eeeeee')
-            .margin({ top: 20, left: 18, right: 18 })
-
-          Column({ space: 10 }) {
-            Row() {
-              Column({ space: 4 }) {
-                Text('累计听歌时长')
-                  .fontSize(15)
-                  .fontColor('#666')
-                Text(this.listenMinutes.toString() + ' 分钟')
-                  .fontSize(24)
-                  .fontWeight(FontWeight.Bold)
-                  .fontColor('#222')
+        // 顶部个人信息（负 margin 上移叠加在背景图上）
+        Row() {
+          Column({ space: 6 }) {
+            Row({ space: 8 }) {
+              Text(this.profile.nickname)
+                .fontSize(22).fontWeight(FontWeight.Bold).fontColor(Color.White)
+              if (this.currentLevel > 0) {
+                Text('Lv' + this.currentLevel)
+                  .fontSize(11).fontColor(Color.White).fontWeight(FontWeight.Medium)
+                  .padding({ left: 7, right: 7, top: 2, bottom: 2 })
+                  .backgroundColor(this.getLevelColor())
+                  .borderRadius(7)
               }
-              .alignItems(HorizontalAlign.Start)
-              .layoutWeight(1)
-
-              Image($r('app.media.ic_music'))
-                .width(30)
-                .height(30)
-                .fillColor('#ff5186')
-                .hitTestBehavior(HitTestMode.Block)
-                .onClick(() => {
-                  void this.loadListenMinutes()
-                })
             }
-            .width('100%')
-            .padding({ left: 16, right: 16, top: 16, bottom: 16 })
-            .backgroundColor('#fff4f8')
-            .borderRadius(14)
-
-            this.playerEntry()
-
-            this.actionRow('历史K歌', '查看我录的歌', false)
+            .alignItems(VerticalAlign.Center)
+            Text(this.profile.signature)
+              .fontSize(13).fontColor('rgba(255,255,255,0.75)')
           }
-          .width('100%')
-          .padding({ left: 18, right: 18, top: 14, bottom: 4 })
+          .layoutWeight(1)
+          .alignItems(HorizontalAlign.Start)
 
-          Text('歌曲评价')
-            .fontSize(16)
-            .fontWeight(FontWeight.Bold)
-            .fontColor('#333')
-            .margin({ left: 18, top: 16, bottom: 12 })
-
-          ForEach(this.reviewStore.reviews, (item: ReviewItem, index: number) => {
-            Column() {
-              Row({ space: 12 }) {
-                Image(item.img)
-                  .width(52)
-                  .height(52)
-                  .borderRadius(8)
-
-                Column({ space: 4 }) {
-                  Text(item.name)
-                    .fontSize(15)
-                    .fontWeight(FontWeight.Medium)
-                    .fontColor('#222')
-                    .maxLines(1)
-                    .textOverflow({ overflow: TextOverflow.Ellipsis })
-                  Text(item.author)
-                    .fontSize(12)
-                    .fontColor('#999')
-                }
-                .layoutWeight(1)
-                .alignItems(HorizontalAlign.Start)
-
-                Text('删除')
-                  .fontSize(12)
-                  .fontColor('#ef4444')
-                  .padding({ left: 10, right: 10, top: 6, bottom: 6 })
-                  .backgroundColor('#fff1f2')
-                  .borderRadius(14)
-                  .onClick(() => {
-                    this.reviewStore.deleteReview(index)
-                  })
-              }
-              .width('100%')
-              .padding({ left: 16, right: 16, top: 12, bottom: 8 })
-
-              Text(item.comment)
-                .fontSize(13)
-                .fontColor('#666')
-                .lineHeight(20)
-                .padding({ left: 16, right: 16, bottom: 12 })
-
-              Divider()
-                .strokeWidth(0.5)
-                .color('#f0f0f0')
-                .margin({ left: 16, right: 16 })
-            }
-          })
-
-          Row().height(28)
-
-          Column() {
-            this.addReviewRow()
-
-            Row().height(10)
-
-            this.actionRow('退出登录', '返回登录页', true)
-          }
-          .width('100%')
-          .padding({ left: 18, right: 18, bottom: 24 })
+          this.avatarCircle()
         }
         .width('100%')
-        .backgroundColor(Color.White)
-        .padding({ bottom: 24 })
+        .padding({ left: 20, right: 20, bottom: 24 })
+        .margin({ top: -100 })
+
+        // 内容区（白色圆角卡片，下移到背景图下方）
+        Column({ space: 14 }) {
+          // 统计行（直接内联在 build 主体，确保响应式刷新与 Lv 徽章一致）
+          Row() {
+            Column({ space: 4 }) {
+              Text(this.listenMinutes.toString())
+                .fontSize(22).fontWeight(FontWeight.Bold).fontColor('#222')
+              Text('听歌分钟')
+                .fontSize(12).fontColor('#999')
+            }
+            .layoutWeight(1).justifyContent(FlexAlign.Center)
+            .onClick(() => { this.pathStack.pushPathByName('ListenLevel', null, false) })
+
+            Column()
+              .width(0.5).height(36).backgroundColor('#eee')
+
+            Column({ space: 4 }) {
+              Text(this.kgeCount.toString())
+                .fontSize(22).fontWeight(FontWeight.Bold).fontColor('#222')
+              Text('K歌作品')
+                .fontSize(12).fontColor('#999')
+            }
+            .layoutWeight(1).justifyContent(FlexAlign.Center)
+
+            Column()
+              .width(0.5).height(36).backgroundColor('#eee')
+
+            Column({ space: 4 }) {
+              Text(this.reviewStore.reviews.length.toString())
+                .fontSize(22).fontWeight(FontWeight.Bold).fontColor('#222')
+              Text('我的歌评')
+                .fontSize(12).fontColor('#999')
+            }
+            .layoutWeight(1).justifyContent(FlexAlign.Center)
+          }
+          .width('100%')
+          .padding({ top: 18, bottom: 18 })
+          .backgroundColor(Color.White)
+          .borderRadius(16)
+
+          this.menuCard(
+            $r('app.media.ic_play'),
+            this.playState.name ? '正在播放' : '音乐播放器',
+            this.playState.name ? (this.playState.author || '点击查看') : '查看当前歌曲和播放列表',
+            '#ff5186',
+            () => { this.pathStack.pushPathByName('Play', null, false) }
+          )
+
+          this.menuCard(
+            $r('app.media.ic_music'),
+            '历史K歌',
+            '查看我录的歌',
+            '#7c6ff5',
+            () => { this.pathStack.pushPathByName('HistoryKGe', null, false) }
+          )
+
+          if (this.reviewStore.reviews.length > 0) {
+            Column({ space: 10 }) {
+              Row() {
+                Text('歌曲评价')
+                  .fontSize(16).fontWeight(FontWeight.Bold).fontColor('#222')
+                  .layoutWeight(1)
+                Text(this.reviewStore.reviews.length.toString() + ' 条')
+                  .fontSize(12).fontColor('#999')
+              }
+              .width('100%')
+              .padding({ left: 4, right: 4 })
+
+              ForEach(this.reviewStore.reviews, (item: ReviewItem, index: number) => {
+                this.reviewCard(item, index)
+              }, (item: ReviewItem, index: number) => index.toString())
+            }
+            .width('100%')
+            .margin({ top: 4 })
+          }
+
+          this.menuCard(
+            $r('app.media.ic_more'),
+            '添加歌评',
+            '选择歌曲并发表评价',
+            '#22c55e',
+            () => { this.pathStack.pushPathByName('AddReview', null, false) }
+          )
+
+          Row() {
+            Text('退出登录')
+              .fontSize(15).fontColor('#ef4444')
+              .layoutWeight(1).textAlign(TextAlign.Center)
+          }
+          .width('100%')
+          .height(48)
+          .backgroundColor('#fff1f2')
+          .borderRadius(16)
+          .onClick(() => { void this.logout() })
+
+          Row().height(20)
+        }
+        .width('100%')
+        .padding({ left: 16, right: 16, top: 20, bottom: 40 })
+        .backgroundColor('#f5f6fa')
+        .borderRadius({ topLeft: 24, topRight: 24 })
+        .margin({ top: -16 })
       }
       .width('100%')
     }
-    .width('100%')
-    .height('100%')
+    .width('100%').height('100%')
     .scrollBar(BarState.Off)
     .edgeEffect(EdgeEffect.Spring)
+    .backgroundColor('#f5f6fa')
     .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
+    .onVisibleAreaChange([0.0, 1.0], (isVisible: boolean) => {
+      if (isVisible) {
+        void this.loadStats()
+      }
+    })
   }
 }

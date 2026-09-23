@@ -1,6 +1,8 @@
-﻿import { fileIo } from '@kit.CoreFileKit'
+﻿// K歌录音页（清K模式：原唱静音驱动歌词 + 原始单声道录音逻辑）
+import { fileIo } from '@kit.CoreFileKit'
 import { abilityAccessCtrl } from '@kit.AbilityKit'
 import { audio } from '@kit.AudioKit'
+import { media } from '@kit.MediaKit'
 import { SongItemType } from '../models/music'
 import { playerManager } from '../utils/AvPlayerManager'
 import { KSongHistoryStore } from '../models/kSongHistoryStore'
@@ -19,11 +21,22 @@ struct RecordPage {
   pathStack: NavPathStack = new NavPathStack()
   @Local song: SongItemType = { img: '', name: '', author: '', url: '', id: '' } as SongItemType
   @Local lyricLines: string[] = []
-  @Local recordState: number = 0
+  @Local playPosition: number = 0
+  @Local duration: number = 0
+  @Local musicVolume: number = 20
   @Local isPlaying: boolean = false
+  @Local currentLine: number = 0
+  @Local showSheet: boolean = false
+  @Local recordState: number = 0          // 0 准备 / 1 录制中 / 2 录制完成
   @Local recordSeconds: number = 0
   @Local dotVisible: boolean = true
+  @Local isPreviewPlaying: boolean = false
   @Local errorText: string = ''
+
+  // ---- 原唱播放器（静音驱动歌词）----
+  private bgPlayer: media.AVPlayer | null = null
+
+  // ---- 原始录音逻辑 ----
   private audioCapturer: audio.AudioCapturer | null = null
   private audioRenderer: audio.AudioRenderer | null = null
   private recordPath: string = ''
@@ -31,6 +44,9 @@ struct RecordPage {
   private playFd: number = -1
   private timerId: number = -1
   private dotTimerId: number = -1
+  private lyricScroller: Scroller = new Scroller()
+  private lastLine: number = -1
+
   private audioStreamInfo: audio.AudioStreamInfo = {
     samplingRate: audio.AudioSamplingRate.SAMPLE_RATE_44100,
     channels: audio.AudioChannel.CHANNEL_1,
@@ -59,26 +75,30 @@ struct RecordPage {
     this.stopTimers()
     this.releasePlayback()
     if (this.audioCapturer) {
-      this.audioCapturer.release()
+      try { this.audioCapturer.release() } catch (e) { /* ignore */ }
       this.audioCapturer = null
     }
     if (this.recordFd >= 0) {
       fileIo.closeSync(this.recordFd)
       this.recordFd = -1
     }
+    if (this.bgPlayer) {
+      try { this.bgPlayer.release() } catch (e) { /* ignore */ }
+      this.bgPlayer = null
+    }
     this.isPlaying = false
   }
 
   releasePlayback(): void {
     if (this.audioRenderer) {
-      this.audioRenderer.release()
+      try { this.audioRenderer.release() } catch (e) { /* ignore */ }
       this.audioRenderer = null
     }
     if (this.playFd >= 0) {
       fileIo.closeSync(this.playFd)
       this.playFd = -1
     }
-    this.isPlaying = false
+    this.isPreviewPlaying = false
   }
 
   stopTimers(): void {
@@ -93,58 +113,110 @@ struct RecordPage {
   }
 
   formatTime(seconds: number): string {
+    if (seconds < 0) seconds = 0
     const m = Math.floor(seconds / 60)
     const s = Math.floor(seconds % 60)
     return m.toString().padStart(2, '0') + ':' + s.toString().padStart(2, '0')
   }
 
-  statusTitle(): string {
-    if (this.recordState === 1) {
-      return '正在录制'
+  // ================= 原唱播放（静音驱动歌词）=================
+
+  async startBgPlayer(): Promise<void> {
+    playerManager.paused()
+    if (this.bgPlayer) {
+      try { await this.bgPlayer.release() } catch (e) { /* ignore */ }
+      this.bgPlayer = null
     }
-    if (this.isPlaying) {
-      return '正在试听'
+    const p = await media.createAVPlayer()
+    p.on('stateChange', (state: string) => {
+      if (state === 'initialized') p.prepare()
+      else if (state === 'prepared') { p.setVolume(this.musicVolume / 100); p.play() }
+      else if (state === 'playing') this.isPlaying = true
+      else if (state === 'paused') this.isPlaying = false
+    })
+    p.on('timeUpdate', (time: number) => {
+      this.playPosition = time
+      this.updateCurrentLine()
+    })
+    p.on('durationUpdate', (dur: number) => {
+      this.duration = dur
+    })
+    const ctx = getContext(this)
+    if (this.song.rawFile) {
+      try {
+        const rawFd = await ctx.resourceManager.getRawFd(this.song.rawFile)
+        p.fdSrc = { fd: rawFd.fd, offset: rawFd.offset, length: rawFd.length }
+      } catch (e) {
+        p.url = typeof this.song.url === 'string' ? this.song.url : ''
+      }
+    } else {
+      p.url = typeof this.song.url === 'string' ? this.song.url : ''
     }
-    if (this.recordState === 2) {
-      return '录制完成'
-    }
-    return '准备开唱'
+    this.bgPlayer = p
   }
 
-  statusDesc(): string {
-    if (this.errorText) {
-      return this.errorText
-    }
-    if (this.recordState === 1) {
-      return '保持节奏，唱出你的版本'
-    }
-    if (this.isPlaying) {
-      return '正在播放刚才录下的声音'
-    }
-    if (this.recordState === 2) {
-      return '可以试听，也可以重新录制'
-    }
-    return '戴上耳机，点击下方按钮开始录制'
+  async toggleBgPlay(): Promise<void> {
+    if (!this.bgPlayer) return
+    try {
+      if (this.bgPlayer.state === 'playing') {
+        await this.bgPlayer.pause()
+      } else if (this.bgPlayer.state === 'paused') {
+        await this.bgPlayer.play()
+      }
+    } catch (e) { /* ignore */ }
   }
 
-  primaryLabel(): string {
-    if (this.recordState === 0) {
-      return '开始录制'
-    }
-    if (this.recordState === 1) {
-      return '停止录制'
-    }
-    return this.isPlaying ? '停止试听' : '试听作品'
+  async seekBg(value: number): Promise<void> {
+    this.playPosition = value
+    try {
+      if (this.bgPlayer && this.bgPlayer.state === 'playing') {
+        await this.bgPlayer.seek(value)
+      }
+    } catch (e) { /* ignore */ }
   }
 
-  resetRecording(): void {
-    this.releasePlayback()
-    this.recordState = 0
-    this.recordSeconds = 0
-    this.isPlaying = false
-    this.errorText = ''
-    this.recordPath = getContext(this).filesDir + '/record_' + Date.now() + '.pcm'
+  async setBgVolume(value: number): Promise<void> {
+    this.musicVolume = value
+    try {
+      if (this.bgPlayer) {
+        await this.bgPlayer.setVolume(value / 100)
+      }
+    } catch (e) { /* ignore */ }
   }
+
+  // ================= 歌词高亮 =================
+
+  updateCurrentLine(): void {
+    if (this.lyricLines.length === 0) return
+    const posSec = this.playPosition / 1000
+    const durSec = this.duration / 1000
+    let line = 0
+    const timestamps = this.song.lyricTimestamps
+    if (timestamps && timestamps.length === this.lyricLines.length && durSec > 0) {
+      for (let i = 0; i < timestamps.length; i++) {
+        if (timestamps[i] <= posSec) line = i
+        else break
+      }
+    } else if (durSec > 0) {
+      const weights: number[] = this.lyricLines.map((l: string) => Math.max(2, l.trim().length))
+      const total: number = weights.reduce((a: number, b: number) => a + b, 0)
+      let acc = 0
+      line = weights.length - 1
+      for (let i = 0; i < weights.length; i++) {
+        acc += weights[i] / total * durSec
+        if (posSec < acc) { line = i; break }
+      }
+    }
+    if (line >= this.lyricLines.length) line = this.lyricLines.length - 1
+    if (line < 0) line = 0
+    this.currentLine = line
+    if (line !== this.lastLine) {
+      this.lastLine = line
+      this.lyricScroller.scrollToIndex(line, true, ScrollAlign.CENTER)
+    }
+  }
+
+  // ================= 原始录音逻辑 =================
 
   boostPcmBuffer(buffer: ArrayBuffer): ArrayBuffer {
     const input = new Int16Array(buffer)
@@ -152,25 +224,18 @@ struct RecordPage {
     let peak = 0
     for (let i = 0; i < input.length; i++) {
       const value = Math.abs(input[i])
-      if (value > peak) {
-        peak = value
-      }
+      if (value > peak) peak = value
     }
     if (peak < 20) {
       output.fill(0)
       return output.buffer
     }
-    if (peak === 0) {
-      return buffer
-    }
+    if (peak === 0) return buffer
     const gain = Math.min(14000 / peak, 60)
     for (let i = 0; i < input.length; i++) {
       let value = Math.round(input[i] * gain)
-      if (value > 32767) {
-        value = 32767
-      } else if (value < -32768) {
-        value = -32768
-      }
+      if (value > 32767) value = 32767
+      else if (value < -32768) value = -32768
       output[i] = value
     }
     return output.buffer
@@ -189,306 +254,17 @@ struct RecordPage {
     }, 60)
   }
 
-  @Builder
-  pauseMark(size: number) {
-    Row({ space: 5 }) {
-      Row()
-        .width(size / 4)
-        .height(size)
-        .borderRadius(size / 8)
-        .backgroundColor(Color.White)
-      Row()
-        .width(size / 4)
-        .height(size)
-        .borderRadius(size / 8)
-        .backgroundColor(Color.White)
-    }
-  }
-
-  @Builder
-  primaryIcon() {
-    if (this.recordState === 1 || this.isPlaying) {
-      this.pauseMark(24)
-    } else {
-      Image($r('app.media.ic_play'))
-        .width(28)
-        .height(28)
-        .fillColor(Color.White)
-        .margin({ left: 4 })
-    }
-  }
-
-  @Builder
-  lyricPanel() {
-    if (this.lyricLines.length > 0 && !(this.lyricLines.length === 1 && this.lyricLines[0] === '暂无歌词')) {
-      List() {
-        ForEach(this.lyricLines, (line: string) => {
-          ListItem() {
-            Text(line.trim() || ' ')
-              .fontSize(16)
-              .lineHeight(30)
-              .fontColor(line.trim() ? '#e8e8e8' : '#777')
-              .width('100%')
-              .textAlign(TextAlign.Center)
-              .padding({ top: 4, bottom: 4 })
-          }
-        }, (line: string, index: number) => index.toString())
-      }
-      .layoutWeight(1)
-      .scrollBar(BarState.Off)
-      .width('100%')
-      .padding({ left: 24, right: 24, top: 12, bottom: 12 })
-    } else {
-      Column({ space: 10 }) {
-        Image($r('app.media.ic_music'))
-          .width(42)
-          .height(42)
-          .fillColor('#5d6575')
-        Text('暂无歌词')
-          .fontSize(16)
-          .fontWeight(FontWeight.Medium)
-          .fontColor('#c9ced8')
-        Text('跟随伴奏，唱出你的版本')
-          .fontSize(13)
-          .fontColor('#747b8b')
-      }
-      .width('100%')
-      .layoutWeight(1)
-      .justifyContent(FlexAlign.Center)
-    }
-  }
-
-  build() {
-    NavDestination() {
-      Column() {
-        Stack({ alignContent: Alignment.Top }) {
-          Image(this.song.img)
-            .width('100%')
-            .height('100%')
-            .objectFit(ImageFit.Cover)
-            .opacity(0.24)
-
-          Column()
-            .width('100%')
-            .height('100%')
-            .backgroundColor('#d80b0d14')
-
-          Column() {
-            Row() {
-              Row() {
-                Image($r('app.media.ic_back'))
-                  .width(20)
-                  .height(20)
-                  .fillColor(Color.White)
-              }
-              .width(40)
-              .height(40)
-              .borderRadius(20)
-              .backgroundColor('#26ffffff')
-              .justifyContent(FlexAlign.Center)
-              .onClick(() => {
-                this.releaseAll()
-                this.pathStack.pop()
-              })
-
-              Text('K歌录音')
-                .fontSize(18)
-                .fontWeight(FontWeight.Bold)
-                .fontColor(Color.White)
-                .layoutWeight(1)
-                .textAlign(TextAlign.Center)
-
-              Row().width(40).height(40)
-            }
-            .width('100%')
-            .padding({ left: 16, right: 16, top: 12 })
-
-            Row({ space: 14 }) {
-              Image(this.song.img)
-                .width(72)
-                .height(72)
-                .borderRadius(16)
-                .border({ width: 1, color: '#33ffffff' })
-                .shadow({ radius: 16, color: '#55000000', offsetY: 8 })
-
-              Column({ space: 6 }) {
-                Text(this.song.name)
-                  .fontSize(22)
-                  .fontWeight(FontWeight.Bold)
-                  .fontColor(Color.White)
-                  .maxLines(1)
-                  .textOverflow({ overflow: TextOverflow.Ellipsis })
-                Text(this.song.author)
-                  .fontSize(14)
-                  .fontColor('#bfc4d0')
-                  .maxLines(1)
-                  .textOverflow({ overflow: TextOverflow.Ellipsis })
-                Row({ space: 7 }) {
-                  Row()
-                    .width(8)
-                    .height(8)
-                    .borderRadius(4)
-                    .backgroundColor(this.recordState === 1 ? '#ff4d62' : '#46e6a0')
-                    .opacity(this.recordState === 1 ? (this.dotVisible ? 1 : 0.28) : 1)
-                  Text(this.statusTitle())
-                    .fontSize(12)
-                    .fontColor('#eef1f7')
-                }
-                .padding({ left: 10, right: 12, top: 5, bottom: 5 })
-                .backgroundColor('#24ffffff')
-                .borderRadius(14)
-              }
-              .layoutWeight(1)
-              .alignItems(HorizontalAlign.Start)
-            }
-            .width('100%')
-            .padding({ left: 20, right: 20, top: 24, bottom: 16 })
-
-            Column({ space: 6 }) {
-              Text(this.formatTime(this.recordSeconds))
-                .fontSize(54)
-                .fontWeight(FontWeight.Bold)
-                .fontColor(Color.White)
-              Text(this.statusDesc())
-                .fontSize(14)
-                .fontColor('#b8becb')
-                .textAlign(TextAlign.Center)
-            }
-            .width('100%')
-            .padding({ top: 8, bottom: 12 })
-
-            Column() {
-              this.lyricPanel()
-            }
-            .width('100%')
-            .layoutWeight(1)
-            .margin({ left: 14, right: 14 })
-            .backgroundColor('#33000000')
-            .border({ width: 1, color: '#14ffffff' })
-            .borderRadius(18)
-
-            Column({ space: 16 }) {
-              Row() {
-                if (this.recordState === 2) {
-                  Column({ space: 7 }) {
-                    Row() {
-                      Image($r('app.media.ic_repeat'))
-                        .width(22)
-                        .height(22)
-                        .fillColor('#d7dbe5')
-                    }
-                    .width(52)
-                    .height(52)
-                    .borderRadius(26)
-                    .backgroundColor('#24ffffff')
-                    .justifyContent(FlexAlign.Center)
-                    .onClick(() => {
-                      this.resetRecording()
-                    })
-                    Text('重录')
-                      .fontSize(12)
-                      .fontColor('#aab1c1')
-                  }
-                  .width(82)
-                } else {
-                  Column().width(82)
-                }
-
-                Column({ space: 9 }) {
-                  Button() {
-                    this.primaryIcon()
-                  }
-                  .width(78)
-                  .height(78)
-                  .borderRadius(39)
-                  .backgroundColor(this.recordState === 1 ? '#ff3d54' : '#ff5186')
-                  .shadow({ radius: 24, color: this.recordState === 1 ? '#55ff3d54' : '#55ff5186', offsetY: 8 })
-                  .onClick(() => {
-                    if (this.recordState === 0) {
-                      void this.startRecording()
-                    } else if (this.recordState === 1) {
-                      void this.stopRecording()
-                    } else if (this.isPlaying) {
-                      this.stopPlayback()
-                    } else {
-                      void this.playRecording()
-                    }
-                  })
-
-                  Text(this.primaryLabel())
-                    .fontSize(13)
-                    .fontWeight(FontWeight.Medium)
-                    .fontColor('#eef1f7')
-                }
-                .layoutWeight(1)
-
-                if (this.recordState === 2) {
-                  Column({ space: 7 }) {
-                    Row() {
-                      Image($r('app.media.ic_music'))
-                        .width(22)
-                        .height(22)
-                        .fillColor('#d7dbe5')
-                    }
-                    .width(52)
-                    .height(52)
-                    .borderRadius(26)
-                    .backgroundColor('#24ffffff')
-                    .justifyContent(FlexAlign.Center)
-                    Text('已保存')
-                      .fontSize(12)
-                      .fontColor('#aab1c1')
-                  }
-                  .width(82)
-                } else {
-                  Column().width(82)
-                }
-              }
-              .width('100%')
-              .alignItems(VerticalAlign.Center)
-
-              Row({ space: 8 }) {
-                Text('录音会自动保存到历史K歌')
-                  .fontSize(12)
-                  .fontColor('#7d8494')
-              }
-              .justifyContent(FlexAlign.Center)
-              .width('100%')
-            }
-            .width('100%')
-            .padding({ left: 18, right: 18, top: 18, bottom: 24 })
-            .backgroundColor('#cc11131c')
-            .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.BOTTOM])
-          }
-          .width('100%')
-          .height('100%')
-        }
-        .width('100%')
-        .height('100%')
-      }
-      .width('100%')
-      .height('100%')
-      .backgroundColor('#090b12')
-      .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
-    }
-    .onReady((context: NavDestinationContext) => {
-      this.pathStack = context.pathStack
-      const p = context.pathInfo?.param as RecordParams
-      if (p) {
-        this.song = p.song
-        if (p.song.lyrics) {
-          this.lyricLines = p.song.lyrics.split('\n')
-        } else {
-          this.lyricLines = ['暂无歌词']
-        }
-      }
-    })
-    .hideTitleBar(true)
+  resetRecording(): void {
+    this.releasePlayback()
+    this.recordState = 0
+    this.recordSeconds = 0
+    this.isPreviewPlaying = false
+    this.errorText = ''
+    this.recordPath = getContext(this).filesDir + '/record_' + Date.now() + '.pcm'
   }
 
   async startRecording(): Promise<void> {
     try {
-      playerManager.paused()
       this.releasePlayback()
       this.errorText = '正在请求麦克风权限...'
 
@@ -497,7 +273,6 @@ struct RecordPage {
         getContext(this), ['ohos.permission.MICROPHONE']
       )
       if (grantStatus.authResults[0] !== abilityAccessCtrl.GrantStatus.PERMISSION_GRANTED) {
-        console.error('record permission denied')
         this.errorText = '麦克风权限未开启，无法录音'
         return
       }
@@ -530,10 +305,9 @@ struct RecordPage {
         this.dotVisible = !this.dotVisible
       }, 500)
     } catch (e) {
-      console.error('record start failed: ' + JSON.stringify(e))
       this.stopTimers()
       if (this.audioCapturer) {
-        await this.audioCapturer.release()
+        try { await this.audioCapturer.release() } catch (err) { /* ignore */ }
         this.audioCapturer = null
       }
       if (this.recordFd >= 0) {
@@ -560,7 +334,6 @@ struct RecordPage {
       }
       const stat = fileIo.statSync(this.recordPath)
       if (stat.size <= 0) {
-        console.error('record file is empty after stop: ' + this.recordPath)
         this.recordState = 0
         this.errorText = '没有录到声音，请重新录制'
         return
@@ -571,30 +344,23 @@ struct RecordPage {
         id: Date.now().toString(),
         songName: this.song.name,
         author: this.song.author,
-        img: this.song.img as string,
+        img: typeof this.song.img === 'string' ? this.song.img : '',
         filePath: this.recordPath,
         duration: this.recordSeconds,
         createdAt: Date.now()
       })
     } catch (e) {
-      console.error('record stop failed: ' + JSON.stringify(e))
       this.errorText = '停止录音失败，请重试'
     }
   }
 
   async playRecording(): Promise<void> {
     try {
-      playerManager.paused()
       this.releasePlayback()
-
       const stat = fileIo.statSync(this.recordPath)
-      if (stat.size <= 0) {
-        console.error('record file is empty: ' + this.recordPath)
-        return
-      }
-      this.isPlaying = true
+      if (stat.size <= 0) return
+      this.isPreviewPlaying = true
       this.errorText = ''
-      console.info('Playing pcm record: size=' + stat.size + ', path=' + this.recordPath)
 
       const file = fileIo.openSync(this.recordPath, fileIo.OpenMode.READ_ONLY)
       this.playFd = file.fd
@@ -605,9 +371,7 @@ struct RecordPage {
       this.audioRenderer = renderer
       let readSize = 0
       renderer.on('writeData', (buffer: ArrayBuffer) => {
-        if (this.playFd < 0) {
-          return
-        }
+        if (this.playFd < 0) return
         const readLength = fileIo.readSync(this.playFd, buffer)
         if (readLength <= 0) {
           this.scheduleStopPlayback()
@@ -621,7 +385,6 @@ struct RecordPage {
       })
       await renderer.start()
     } catch (e) {
-      console.error('play record failed: ' + JSON.stringify(e))
       this.errorText = '试听失败，请重新录制'
       this.releasePlayback()
     }
@@ -629,16 +392,275 @@ struct RecordPage {
 
   async stopPlayback(): Promise<void> {
     if (this.audioRenderer) {
-      await this.audioRenderer.stop()
-      await this.audioRenderer.release()
+      try { await this.audioRenderer.stop(); await this.audioRenderer.release() } catch (e) { /* ignore */ }
       this.audioRenderer = null
     }
     if (this.playFd >= 0) {
       fileIo.closeSync(this.playFd)
       this.playFd = -1
     }
-    this.isPlaying = false
+    this.isPreviewPlaying = false
+  }
+
+  // ================= 页面主体 =================
+
+  build() {
+    NavDestination() {
+      Column() {
+        // 顶部栏
+        Row() {
+          Text('K歌')
+            .fontSize(18).fontWeight(FontWeight.Bold).fontColor(Color.White)
+            .width('100%')
+            .textAlign(TextAlign.Center)
+        }
+        .width('100%')
+        .padding({ left: 16, right: 16, top: 30 })
+
+        // 歌曲信息
+        Row({ space: 14 }) {
+          Image(this.song.img)
+            .width(60).height(60).borderRadius(12)
+            .shadow({ radius: 8, color: 'rgba(0,0,0,0.35)', offsetX: 0, offsetY: 2 })
+          Column({ space: 5 }) {
+            Text(this.song.name)
+              .fontSize(19).fontWeight(FontWeight.Bold).fontColor('#fff')
+              .maxLines(1)
+            Text(this.song.author)
+              .fontSize(13).fontColor('#aaa')
+            Row({ space: 7 }) {
+              Row()
+                .width(8).height(8).borderRadius(4)
+                .backgroundColor(this.recordState === 1 ? '#ff4d62' : '#46e6a0')
+                .opacity(this.recordState === 1 ? (this.dotVisible ? 1 : 0.28) : 1)
+              Text(this.recordState === 1 ? '录制中' : '清K中')
+                .fontSize(10).fontColor('#fff')
+            }
+            .padding({ left: 8, right: 10, top: 3, bottom: 3 })
+            .backgroundColor('#33ff5186')
+            .borderRadius(8)
+            .margin({ top: 2 })
+          }
+          .alignItems(HorizontalAlign.Start)
+          .layoutWeight(1)
+        }
+        .width('100%')
+        .padding({ left: 20, right: 20, top: 14, bottom: 10 })
+
+        // 歌词区
+        List({ scroller: this.lyricScroller, space: 6 }) {
+          ForEach(this.lyricLines, (line: string, index: number) => {
+            ListItem() {
+              Text(line.trim() || ' ')
+                .fontSize(this.currentLine === index ? 20 : 15)
+                .fontWeight(this.currentLine === index ? FontWeight.Bold : FontWeight.Normal)
+                .fontColor(this.currentLine === index ? '#ffffff' : '#666')
+                .textShadow(this.currentLine === index ? {
+                  radius: 12,
+                  color: 'rgba(255,255,255,0.18)',
+                  offsetX: 0,
+                  offsetY: 0
+                } : { radius: 0, color: Color.Transparent, offsetX: 0, offsetY: 0 })
+                .lineHeight(28)
+                .textAlign(TextAlign.Center)
+                .width('100%')
+                .padding({ top: 6, bottom: 6 })
+            }
+          }, (line: string, index: number) => index.toString())
+        }
+        .width('100%')
+        .layoutWeight(1)
+        .scrollBar(BarState.Off)
+        .padding({ top: 40, bottom: 40, left: 20, right: 20 })
+
+        // 进度条 + 播放暂停
+        Row({ space: 8 }) {
+          Button() {
+            if (this.isPlaying) {
+              Row({ space: 3 }) {
+                Row().width(3).height(14).borderRadius(1).backgroundColor(Color.White)
+                Row().width(3).height(14).borderRadius(1).backgroundColor(Color.White)
+              }
+            } else {
+              Text('▶').fontSize(12).fontColor('#fff').margin({ left: 2 })
+            }
+          }
+          .width(32).height(32).borderRadius(16)
+          .backgroundColor('#2a2a2a')
+          .onClick(() => { void this.toggleBgPlay() })
+
+          Text(this.formatTime(Math.floor(this.playPosition / 1000)))
+            .fontSize(12).fontColor('#888').width(42).textAlign(TextAlign.Center)
+
+          Slider({
+            value: this.playPosition,
+            min: 0,
+            max: this.duration > 0 ? this.duration : 1,
+            step: 1
+          })
+            .layoutWeight(1)
+            .trackColor('#333')
+            .selectedColor('#ff5186')
+            .blockColor('#ff5186')
+            .onChange((value: number, mode: SliderChangeMode) => {
+              if (mode === SliderChangeMode.Moving || mode === SliderChangeMode.End) {
+                void this.seekBg(value)
+              }
+            })
+
+          Text(this.formatTime(Math.floor(this.duration / 1000)))
+            .fontSize(12).fontColor('#888').width(42).textAlign(TextAlign.Center)
+        }
+        .width('100%')
+        .padding({ left: 16, right: 16, top: 10, bottom: 6 })
+
+        // 状态提示
+        if (this.recordState === 1) {
+          Row({ space: 6 }) {
+            Row().width(8).height(8).borderRadius(4).backgroundColor('#ff4d62')
+            Text('正在录制 ' + this.formatTime(this.recordSeconds))
+              .fontSize(12).fontColor('#aaa')
+          }
+          .width('100%').justifyContent(FlexAlign.Center)
+          .padding({ top: 4, bottom: 4 })
+        } else if (this.recordState === 2) {
+          Row({ space: 10 }) {
+            Text(this.isPreviewPlaying ? '正在试听' : '作品已保存')
+              .fontSize(12).fontColor('#888').layoutWeight(1)
+            Text(this.isPreviewPlaying ? '停止' : '试听')
+              .fontSize(13).fontColor('#ff5186')
+              .onClick(() => {
+                if (this.isPreviewPlaying) { void this.stopPlayback() }
+                else { void this.playRecording() }
+              })
+            Text('重录')
+              .fontSize(13).fontColor('#888')
+              .onClick(() => { this.resetRecording() })
+          }
+          .width('100%')
+          .padding({ left: 20, right: 20, top: 4, bottom: 4 })
+        } else {
+          Text('点击录制，唱出你的版本')
+            .fontSize(12).fontColor('#666')
+            .width('100%').textAlign(TextAlign.Center)
+            .padding({ top: 4, bottom: 4 })
+        }
+
+        // 底部三按钮：音量 / 录制 / 文件
+        Row() {
+          Column({ space: 6 }) {
+            Image($r('app.media.ic_volume'))
+              .width(24).height(24).fillColor('#ccc')
+            Text('音量').fontSize(11).fontColor('#888')
+          }
+          .layoutWeight(1).justifyContent(FlexAlign.Center)
+          .onClick(() => { this.showSheet = true })
+
+          Column({ space: 6 }) {
+            Stack({ alignContent: Alignment.Center }) {
+              Row()
+                .width(76).height(76).borderRadius(38)
+                .backgroundColor('rgba(255,81,134,0.12)')
+              Button() {
+                if (this.recordState === 1) {
+                  Row({ space: 3 }) {
+                    Row().width(4).height(18).borderRadius(1).backgroundColor(Color.White)
+                    Row().width(4).height(18).borderRadius(1).backgroundColor(Color.White)
+                  }
+                } else if (this.recordState === 2 && this.isPreviewPlaying) {
+                  Row({ space: 3 }) {
+                    Row().width(4).height(18).borderRadius(1).backgroundColor(Color.White)
+                    Row().width(4).height(18).borderRadius(1).backgroundColor(Color.White)
+                  }
+                } else {
+                  Text('●').fontSize(20).fontColor('#fff')
+                }
+              }
+              .width(60).height(60).borderRadius(30)
+              .backgroundColor('#ff5186')
+              .padding(0)
+              .shadow({ radius: 16, color: 'rgba(255,81,134,0.4)', offsetX: 0, offsetY: 4 })
+            }
+            Text(this.recordState === 1 ? '停止' : (this.recordState === 2 ? (this.isPreviewPlaying ? '停听' : '试听') : '录制'))
+              .fontSize(11).fontColor('#888')
+          }
+          .layoutWeight(1).justifyContent(FlexAlign.Center)
+          .onClick(() => {
+            if (this.recordState === 0) { void this.startRecording() }
+            else if (this.recordState === 1) { void this.stopRecording() }
+            else if (this.isPreviewPlaying) { void this.stopPlayback() }
+            else { void this.playRecording() }
+          })
+
+          Column({ space: 6 }) {
+            Image($r('app.media.ic_file'))
+              .width(24).height(24).fillColor('#ccc')
+            Text('文件').fontSize(11).fontColor('#888')
+          }
+          .layoutWeight(1).justifyContent(FlexAlign.Center)
+          .onClick(() => {
+            this.pathStack.pushPathByName('HistoryKGe', new Object(), false)
+          })
+        }
+        .width('100%')
+        .padding({ left: 10, right: 10, top: 10, bottom: 36 })
+      }
+      .width('100%').height('100%')
+      .backgroundColor('#131313')
+      .radialGradient({
+        center: ['50%', '22%'],
+        radius: 450,
+        colors: [['#262626', 0], ['#131313', 1]]
+      })
+      .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
+    }
+    .onReady((context: NavDestinationContext) => {
+      this.pathStack = context.pathStack
+      const p = context.pathInfo?.param as RecordParams
+      if (p) {
+        this.song = p.song
+        this.lyricLines = p.song.lyrics ? p.song.lyrics.split('\n') : ['暂无歌词']
+      }
+      void this.startBgPlayer()
+    })
+    .hideTitleBar(true)
+    .bindSheet($$this.showSheet, this.volumeSheet(), {
+      height: 220,
+      dragBar: true,
+      backgroundColor: '#2a2a2a'
+    })
+  }
+
+  @Builder
+  volumeSheet() {
+    Column({ space: 16 }) {
+      Text('原唱音量')
+        .fontSize(16).fontWeight(FontWeight.Medium).fontColor('#fff')
+        .margin({ top: 16 })
+      Row({ space: 12 }) {
+        Text('静音').fontSize(12).fontColor('#888')
+        Slider({
+          value: this.musicVolume,
+          min: 0,
+          max: 100,
+          step: 1
+        })
+          .layoutWeight(1)
+          .trackColor('#444')
+          .selectedColor('#ff5186')
+          .blockColor('#ff5186')
+          .onChange((value: number, mode: SliderChangeMode) => {
+            if (mode === SliderChangeMode.Moving || mode === SliderChangeMode.End) {
+              void this.setBgVolume(value)
+            }
+          })
+        Text('跟唱').fontSize(12).fontColor('#888')
+      }
+      .width('100%')
+      .padding({ left: 24, right: 24 })
+      Text(this.musicVolume === 0 ? '当前：纯清K（原唱静音，只走歌词）' : '当前：原唱音量 ' + this.musicVolume + '%（可跟唱）')
+        .fontSize(12).fontColor('#666')
+    }
+    .width('100%').height('100%')
   }
 }
-
-

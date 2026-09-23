@@ -127,6 +127,7 @@ export struct Liked {
     .width('100%')
     .height('100%')
     .backgroundColor(Color.White)
-    .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
+    .padding({ bottom: 60 })
+    .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.BOTTOM])
   }
 }

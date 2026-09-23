@@ -1,3 +1,4 @@
+//评论添加页面
 import { AppStorageV2, promptAction } from '@kit.ArkUI'
 import { ReviewStore } from '../models/reviewStore'
 import { ReviewItem, reviewSongs } from '../data/reviewData'
@@ -14,6 +15,7 @@ struct AddReview {
   @Local selectedIndex: number = 0
   @Local inputText: string = ''
 
+  //发布评论函数
   publish(): void {
     const text = this.inputText.trim()
     if (!text) {
@@ -146,6 +148,7 @@ struct AddReview {
       .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
     }
     .hideTitleBar(true)
+    //
     .onReady((context: NavDestinationContext) => {
       this.pathStack = context.pathStack
     })

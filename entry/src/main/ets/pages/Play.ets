@@ -20,6 +20,8 @@ struct Play {
   @Local
   playState: GlobalMusic = AppStorageV2.connect(GlobalMusic, 'SONG_KEY', ()=> new GlobalMusic())!
   favStore: FavoritesStore = AppStorageV2.connect(FavoritesStore, 'FAVORITES_KEY', () => new FavoritesStore())!
+  @Local rotateAngle: number = 0
+  private rotateTimer: number = -1
   //playState:SongItemType = this.songs[0]
 
 
@@ -45,17 +47,44 @@ struct Play {
   }
 
   number2time(number: number) {
-    // 毫秒 → 秒 → 分+秒; 先判断是否大于1分钟
-    if (number > 60 * 1000) {
-      const s = Math.floor(number/1000%60)
-      const m = Math.floor(number/1000/60)
-      const second = s.toString().padStart(2, '0')
-      const minute = m.toString().padStart(2, '0')
-      return minute + ':' + second
+    const totalSeconds = Math.max(0, Math.floor(number / 1000))
+    const minute = Math.floor(totalSeconds / 60).toString().padStart(2, '0')
+    const second = (totalSeconds % 60).toString().padStart(2, '0')
+    return minute + ':' + second
+  }
+
+  aboutToAppear(): void {
+    if (this.playState.isPlay) {
+      this.startRotate()
+    }
+  }
+
+  aboutToDisappear(): void {
+    this.stopRotate()
+  }
+
+  @Monitor('playState.isPlay')
+  onPlayChange(): void {
+    if (this.playState.isPlay) {
+      this.startRotate()
     } else {
-      const s = Math.floor(number/1000%60)
-      const second = s.toString().padStart(2, '0')
-      return '00:' + second
+      this.stopRotate()
+    }
+  }
+
+  startRotate(): void {
+    if (this.rotateTimer !== -1) {
+      return
+    }
+    this.rotateTimer = setInterval(() => {
+      this.rotateAngle = (this.rotateAngle + 2) % 360
+    }, 50)
+  }
+
+  stopRotate(): void {
+    if (this.rotateTimer !== -1) {
+      clearInterval(this.rotateTimer)
+      this.rotateTimer = -1
     }
   }
 
@@ -151,70 +180,43 @@ struct Play {
                   .borderRadius(400)
                   .clip(true)
                   .aspectRatio(1)
+                  .rotate({ angle: this.rotateAngle })
                 }
                 .margin({
-                  top: 50
+                  top: 30
                 })
-                .width('90%')
+                .width('84%')
+                .constraintSize({ maxWidth: 300 })
                 .aspectRatio(1)
                 .justifyContent(FlexAlign.Center)
-                .padding(24)
-                // 唱针
+                .padding(12)
+                // 唱针：播放时转到唱片上，暂停/未播放时移开
                 Image($r('app.media.ic_stylus'))
                   .width(200)
                   .aspectRatio(1)
                   .rotate({
-                    angle: -55,
+                    angle: this.playState.isPlay ? -28 : -55,
                     centerX: 100,
                     centerY: 30
                   })
                   .animation({
-                    duration: 500
+                    duration: 500,
+                    curve: Curve.EaseInOut
                   })
               }
+              .margin({ top: 20 })
               // 歌曲信息
-              Stack() {
-                // 第一个
-                Column({ space: 8 }) {
-                  Text(this.playState.name)
-                    .fontSize(28)
-                    .fontWeight(FontWeight.Bold)
-                    .fontColor('#4bb0c4')
-                  Text(this.playState.author)
-                    .fontSize(18)
-                    .fontColor('#4bb0c4')
-                }
-                .layoutWeight(1)
-                .justifyContent(FlexAlign.Center)
-                .zIndex(1)
-                // 第二个
-                Column({ space: 8 }) {
-                  Text(this.playState.name)
-                    .fontSize(28)
-                    .fontWeight(FontWeight.Bold)
-                    .fontColor('#ec5c87')
-                  Text(this.playState.author)
-                    .fontSize(18)
-                    .fontColor('#ec5c87')
-                }
-                .layoutWeight(1)
-                .justifyContent(FlexAlign.Center)
-                .zIndex(2)
-                // 第三个
-                Column({ space: 8 }) {
-                  Text(this.playState.name)
-                    .fontSize(28)
-                    .fontWeight(FontWeight.Bold)
-                    .fontColor(Color.White)
-                  Text(this.playState.author)
-                    .fontSize(18)
-                    .fontColor(Color.White)
-                }
-                .layoutWeight(1)
-                .justifyContent(FlexAlign.Center)
-                .zIndex(3)
+              Column({ space: 8 }) {
+                Text(this.playState.name)
+                  .fontSize(28)
+                  .fontWeight(FontWeight.Bold)
+                  .fontColor(Color.White)
+                Text(this.playState.author)
+                  .fontSize(18)
+                  .fontColor(Color.White)
               }
               .layoutWeight(1)
+              .justifyContent(FlexAlign.Center)
               // 操作
               Row() {
                 Badge({ value: '99+', style: { badgeSize: 12, badgeColor: '#45CCCCCC' } }) {
@@ -264,7 +266,7 @@ struct Play {
                   Slider({
                     value: this.playState.time,
                     min: 0,
-                    max: this.playState.duration,
+                    max: Math.max(1, this.playState.duration),
                   })
                     .layoutWeight(1)
                     .blockColor(Color.White)
@@ -272,7 +274,9 @@ struct Play {
                     .trackColor('#ccc5c5c5')
                     .trackThickness(2)
                     .onChange((value) => {
-                      playerManager.seekPlay(value)
+                      if (this.playState.duration > 0) {
+                        playerManager.seekPlay(value)
+                      }
                     })
                   Text(this.number2time(this.playState.duration))
                     .fontSize(12)

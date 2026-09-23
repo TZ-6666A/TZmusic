@@ -1,4 +1,5 @@
 //相当于全局变量
+//整个播放器的歌曲状态
 import { SongItemType } from "./music"
 
 @ObservedV2

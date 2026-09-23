@@ -1,5 +1,6 @@
 ﻿import { SongItemType } from '../models/music'
 
+//歌单推荐
 export interface recommendDailyType {
   img: string | Resource  // 图片
   title: string // 简介文字
@@ -27,6 +28,7 @@ export const swiperList: Resource[] = [
   $r('app.media.lunbotu4'),
   $r('app.media.lunbotu5'),
 ]
+
 // 每日推荐数据
 export const dailyRecommend: recommendDailyType[] = [
   {
@@ -369,6 +371,7 @@ export const dailyRecommend: recommendDailyType[] = [
     ]
   }
 ]
+
 // 热门歌手数据
 export const recommendList: recommendListType[] = [
   {
@@ -413,6 +416,7 @@ export const recommendList: recommendListType[] = [
   }
 ]
 
+//可以直接搜索的歌曲
 export const searchSongs: SongItemType[] = [
   {
     img: 'http://yjy-teach-oss.oss-cn-beijing.aliyuncs.com/HeimaCloudMusic/0.jpg',

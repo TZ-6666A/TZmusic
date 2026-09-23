@@ -1,14 +1,14 @@
-﻿//推荐页面
+﻿//推荐页面（大厅页面）
 import { AppStorageV2, promptAction } from '@kit.ArkUI';
 import { SongItemType } from '../models/music'
 import { playerManager } from '../utils/AvPlayerManager'
 import { dailyRecommend as dailyRecommendData, recommendDailyType, recommendList as recommendListData, recommendListType, searchSongs as searchSongsData, swiperList as swiperListData } from '../data/recommendData'
 
-@Component
+@ComponentV2
   // export 导出，别的组件才可以导入去使用
   //推荐页的轮播组件
 export struct Recommend {
-  @State searchValue: string = ''
+  @Local searchValue: string = ''
 
 
   swiperList: Resource[] = swiperListData
@@ -20,19 +20,23 @@ export struct Recommend {
   // 导航控制
   pathStack: NavPathStack = AppStorageV2.connect(NavPathStack, 'navStack', () => new NavPathStack())!
 
+  //搜索歌曲原理
   findSongByKeyword(keyword: string): SongItemType | null {
+    //trim:去空格  toLowerCase:变小写
     const value = keyword.trim().toLowerCase()
     if (!value) {
       return null
     }
     for (const playlist of this.dailyRecommend) {
       const matched = playlist.songs.find((song: SongItemType) => {
+        //includes:查看歌名里面有没有包含用户输入的字
         return song.name.toLowerCase().includes(value)
       })
       if (matched) {
         return matched
       }
     }
+    //推荐页面没找到，去备用歌库去找
     const matchedExtra = this.searchSongs.find((song: SongItemType) => {
       return song.name.toLowerCase().includes(value)
     })
@@ -43,11 +47,17 @@ export struct Recommend {
   }
 
   searchAndPlay(): void {
-    const song = this.findSongByKeyword(this.searchValue)
+    const keyword = this.searchValue.trim()
+    if (!keyword) {
+      promptAction.showToast({ message: '请输入歌名' })
+      return
+    }
+    const song = this.findSongByKeyword(keyword)
     if (!song) {
       promptAction.showToast({ message: '暂无此歌曲版权，敬请期待' })
       return
     }
+    //页面跳转，把这首歌交给播放器，让它开始播放。
     this.pathStack.pushPathByName('Play', null, false)
     void playerManager.singPlay(song)
   }
@@ -71,33 +81,29 @@ export struct Recommend {
   build() {
     Scroll() { // 新增：外层包裹垂直滚动容器
       Column({ space: 10 }) {
-        // 搜索区域
+        // 搜索区域（背景铺满整栏、左右贴边）
         Row() {
-          Image($r('app.media.ic_code'))
-            .width(20)
-            .fillColor('#817D83')
-          TextInput({ placeholder: '搜索歌曲', text: this.searchValue })
+          Search({ value: this.searchValue, placeholder: '搜索歌曲' })
+            .searchButton('搜索')
+            .width('100%')
+            .height(48)
+            .backgroundColor('#f5f6fa')
             .placeholderColor('#817D83')
-            .padding({ left: 5 })
-            .fontColor('#999')
-            .layoutWeight(1)
+            .fontColor('#333')
+            .borderRadius(16)
+            .border({ width: 1, color: '#e0e0e0' })
+            .onSubmit((value: string) => {
+              this.searchValue = value
+              this.searchAndPlay()
+            })
             .onChange((value: string) => {
               this.searchValue = value
             })
-            .onSubmit(() => {
-              this.searchAndPlay()
-            })
-          Image($r('app.media.ic_search'))
-            .width(22)
-            .fillColor('#817D83')
-            .onClick(() => {
-              this.searchAndPlay()
-            })
         }
         .width('100%')
-        .backgroundColor('#2D2B29')
-        .border({ radius: 20 })
-        .padding({ left: 8, right: 8 })
+        .height(64)
+        // 抵消外层 Column 的左右 10px padding，让搜索栏与屏幕同宽、左右贴边
+        .margin({ left: -10, right: -10 })
 
         // 轮播图区域
         Swiper() {
@@ -186,7 +192,7 @@ export struct Recommend {
         left: 10,
         right: 10,
         top: 5,
-        bottom: 5
+        bottom: 60
       })
     }
     .width('100%')
