@@ -10,7 +10,7 @@
 - 收藏与播放列表：管理喜欢的歌曲与当前播放列表。
 - K 歌录音：申请麦克风权限后录制 PCM 音频，支持试听、重录、保存、历史记录查看与删除。
 - 歌曲评价：可添加、查看和删除歌曲评价。
-- 个人中心：展示累计听歌时长、历史 K 歌记录、当前播放信息与登录状态。
+- 个人中心：展示累计听歌时长、听歌等级、历史 K 歌记录、当前播放信息与登录状态，支持昵称头像编辑。
 
 ## 技术栈
 
@@ -44,14 +44,13 @@ TZmusic/
 │  └─ images/             # README 项目截图（不参与应用打包）
 ├─ entry/
 │  └─ src/main/
-│     ├─ ets/
-│     │  ├─ pages/        # 推荐、播放、K 歌、录音、个人中心等页面
-│     │  ├─ models/       # 播放、收藏、评价、听歌时长等状态与存储
-│     │  ├─ utils/        # AVPlayer 与 AVSession 管理
-│     │  └─ data/         # 推荐歌曲和歌评数据
-│     └─ resources/
-│        ├─ base/media/   # 应用图片与图标资源
-│        └─ rawfile/      # 本地音频资源
+│     └─ ets/
+│        ├─ pages/        # 推荐、播放、播放列表、歌手详情、收藏、K 歌、录音、
+│        │                # 历史 K 歌、听歌等级、添加评论、个人中心、资料编辑等页面
+│        ├─ models/       # 播放状态、收藏、评论、听歌时长、K 歌历史、用户资料等 Store
+│        ├─ utils/        # AvPlayerManager 播放内核、AvSessionManager 系统媒体控制
+│        ├─ services/     # KaraokeService（伴奏播放 + PCM 录音 + WAV 导出）
+│        └─ data/         # 推荐歌曲和歌评数据
 ├─ build-profile.json5
 └─ hvigorfile.ts
 ```
@@ -59,7 +58,7 @@ TZmusic/
 ## 环境要求
 
 - DevEco Studio
-- HarmonyOS SDK：与项目配置中的 `6.0.2(22)` 保持兼容
+- HarmonyOS SDK：与项目配置中的 `API 26`（`compatibleSdkVersion: 26.0.0`）保持兼容
 - 真机调试建议使用 HarmonyOS 手机；K 歌录音功能需要授予麦克风权限
 
 ## 运行方式
