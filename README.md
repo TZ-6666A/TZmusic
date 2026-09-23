@@ -28,13 +28,13 @@
 
 将真机或模拟器截图放入 `docs/images/` 后，README 会通过相对路径展示图片；这些图片不会被打包到应用中。
 
-| 推荐与播放 | K 歌录音 |
+| 推荐大厅 | 播放页 |
 | --- | --- |
-| ![推荐与播放页面](docs/images/home-play.png) | ![K歌录音页面](docs/images/k-song.png) |
+| ![推荐大厅](docs/images/home.png) | ![播放页](docs/images/player.png) |
 
-| 历史 K 歌 | 个人中心 |
+| K 歌 | 个人中心 |
 | --- | --- |
-| ![历史K歌页面](docs/images/k-song-history.png) | ![个人中心页面](docs/images/profile.png) |
+| ![K 歌](docs/images/ksong.png) | ![个人中心](docs/images/profile.png) |
 
 ## 项目结构
 
@@ -90,13 +90,6 @@ entry\build\default\outputs\default\entry-default-unsigned.hap
 | `ohos.permission.INTERNET` | 加载网络歌曲封面或音乐资源 |
 | `ohos.permission.KEEP_BACKGROUND_RUNNING` | 保持后台音频播放 |
 | `ohos.permission.MICROPHONE` | K 歌录音 |
-
-
-## 项目预览
-![输入图片说明](image-1.png)
-![输入图片说明](image-2.png)
-![输入图片说明](image-3.png)
-![输入图片说明](image.png)
 
 ## 说明
 
